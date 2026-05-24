@@ -140,6 +140,7 @@
 
       var totalRows = origData ? origData.rows.length : (synthData ? synthData.rows.length : 0);
       var showRows = Math.min(PREVIEW_MAX_ROWS, totalRows);
+
       var footer = document.createElement('p');
       footer.className = 'compare-footer';
       footer.style.cssText = 'margin-top: 0.75rem; font-size: 0.9rem; color: var(--text-muted);';
@@ -147,6 +148,7 @@
 
       row.appendChild(left);
       row.appendChild(right);
+
       var wrap = document.createElement('div');
       wrap.appendChild(row);
       wrap.appendChild(footer);
@@ -159,6 +161,7 @@
         var wrap = buildCompare(orig, synth);
         area.innerHTML = '';
         area.appendChild(wrap);
+
         var leftWrap = area.querySelector('.step4-compare-half:first-child .data-table-wrap');
         var rightWrap = area.querySelector('.step4-compare-half:last-child .data-table-wrap');
         if (leftWrap && rightWrap) {
@@ -211,6 +214,7 @@
     }
 
     area.innerHTML = '<p style="margin-bottom: 1rem;">Download synthetic data as CSV (single file).</p>';
+
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'btn btn-primary';
@@ -221,6 +225,7 @@
       btn.disabled = true;
       var originalLabel = btn.textContent;
       btn.textContent = 'Downloading…';
+
       downloadSyntheticCsv(tableName)
         .then(function () {
           if (onToast) onToast('CSV downloaded: synthetic_' + tableName + '.csv', 'success');
@@ -237,6 +242,23 @@
     if (onToast) onToast('Click the button above to download CSV file.', 'success');
   }
 
+  // ── DELETE ALL ──────────────────────────────────────────────────────────────
+  /**
+   * Calls DELETE /api/delete-all on the backend.
+   * Clears results/, metadata/ and uploaded raw_data/ directories server-side.
+   * @param {string} baseUrl
+   * @returns {Promise<{ deleted_files: string[], errors: string[] }>}
+   */
+  function deleteAllData(baseUrl) {
+    var url = (baseUrl || API_BASE).replace(/\/$/, '') + '/api/delete-all';
+    return fetch(url, { method: 'DELETE' })
+      .then(function (res) {
+        if (!res.ok) return res.json().then(function (r) { throw new Error(r.detail || r.message || 'Delete failed: ' + res.status); });
+        return res.json();
+      });
+  }
+  // ───────────────────────────────────────────────────────────────────────────
+
   /** Shared scores map for badge updates when table selection changes */
   var step4Scores = {};
 
@@ -249,6 +271,7 @@
   function refreshTableDropdown(tables, scores, baseUrl) {
     scores = scores || {};
     step4Scores = scores;
+
     var sel = document.getElementById('step4-table-select');
     var section = document.getElementById('step4-table-section');
     var actions = document.getElementById('step4-actions');
@@ -269,10 +292,12 @@
 
     var cur = sel.value;
     sel.innerHTML = '';
+
     var def = document.createElement('option');
     def.value = '';
     def.textContent = '—';
     sel.appendChild(def);
+
     tables.forEach(function (t) {
       var opt = document.createElement('option');
       opt.value = t;
@@ -294,12 +319,16 @@
   function refreshStep4SourceDropdown() {
     var sel = document.getElementById('step4-source-table-select');
     if (!sel) return;
+
     var files = (window.Step1 && typeof window.Step1.fileStore === 'function') ? window.Step1.fileStore() : [];
     var supported = files.filter(function (f) { return f && f.name && /\.(csv|xls|xlsx)$/i.test(f.name); });
+
     var cur = sel.value;
     sel.innerHTML = supported.length ? '' : '<option value="">Please upload a file in Step 1</option>';
+
     if (supported.length) {
       var tableNameFromFilename = (window.Step1 && window.Step1.tableNameFromFilename) ? window.Step1.tableNameFromFilename : function (name) { return (name || '').replace(/\.(csv|xls|xlsx)$/i, ''); };
+
       supported.forEach(function (f) {
         var opt = document.createElement('option');
         opt.value = f.name;
@@ -363,7 +392,6 @@
     if (anonymizeBtn) {
       anonymizeBtn.addEventListener('click', function () {
         setStep4Error('');
-
         try {
           var files = S1 && typeof S1.fileStore === 'function' ? S1.fileStore() : [];
           var supported = files.filter(function (f) { return f && f.name && /\.(csv|xls|xlsx)$/i.test(f.name); });
@@ -388,6 +416,7 @@
               if (onToast) onToast(errMsg, 'error');
               return;
             }
+
             var tbody = document.querySelector('#panel-3 .config-table tbody');
             if (tbody) {
               tbody.querySelectorAll('tr').forEach(function (tr) {
@@ -395,8 +424,10 @@
                 var col = tr.querySelector('td:first-child');
                 var colName = col ? col.textContent.trim() : '';
                 if (!colName) return;
+
                 var forceChk = tr.querySelector('.force-pii-chk') || tr.querySelector('td:nth-child(3) input[type="checkbox"]');
                 var exemptChk = tr.querySelector('.exempt-chk') || tr.querySelector('td:nth-child(4) input[type="checkbox"]');
+
                 if (exemptChk && exemptChk.checked) exempt.push(colName);
                 if (forceChk && forceChk.checked) forcePii.push(colName);
               });
@@ -413,54 +444,56 @@
           formData.append('user_config', JSON.stringify({ exempt_columns: exempt, force_pii_columns: forcePii }));
           if (configForTable) formData.append('config_for_table', configForTable);
 
-        fetch((baseUrl || API_BASE).replace(/\/$/, '') + '/api/anonymize', { method: 'POST', body: formData })
-          .then(function (res) {
-            if (!res.ok) return res.json().then(function (r) { throw new Error(r.detail || r.message || 'Request failed'); });
-            return res.json();
-          })
-          .then(function (report) {
-            setStep4Error('');
-            if (report.errors && report.errors.length) {
-              try { console.warn('Step4 anonymization warnings:', report.errors); } catch (e) {}
-              if (onToast) onToast('Anonymization completed. Some files failed to process.', 'default');
-            } else {
-              if (onToast) onToast('Anonymization complete. Processed ' + (report.processed_files || []).length + ' file(s).', 'success');
-            }
-            var pf = report.processed_files || [];
-            var tables = pf.length > 0 ? pf.map(function (p) { return p.table; }) : [];
-            var scores = {};
-            pf.forEach(function (p) { if (p.score != null) scores[p.table] = p.score; });
+          fetch((baseUrl || API_BASE).replace(/\/$/, '') + '/api/anonymize', { method: 'POST', body: formData })
+            .then(function (res) {
+              if (!res.ok) return res.json().then(function (r) { throw new Error(r.detail || r.message || 'Request failed'); });
+              return res.json();
+            })
+            .then(function (report) {
+              setStep4Error('');
 
-            if (tables.length > 0) {
-              refreshTableDropdown(tables, scores, baseUrl);
-              var sel = document.getElementById('step4-table-select');
-              if (sel) sel.value = tables[0];
-              var badge = document.getElementById('step4-quality-badge');
-              if (badge) badge.style.display = 'none';
-            } else {
-              return fetchSyntheticTables(baseUrl).then(function (data) {
+              if (report.errors && report.errors.length) {
+                try { console.warn('Step4 anonymization warnings:', report.errors); } catch (e) {}
+                if (onToast) onToast('Anonymization completed. Some files failed to process.', 'default');
+              } else {
+                if (onToast) onToast('Anonymization complete. Processed ' + (report.processed_files || []).length + ' file(s).', 'success');
+              }
+
+              var pf = report.processed_files || [];
+              var tables = pf.length > 0 ? pf.map(function (p) { return p.table; }) : [];
+              var scores = {};
+              pf.forEach(function (p) { if (p.score != null) scores[p.table] = p.score; });
+
+              if (tables.length > 0) {
+                refreshTableDropdown(tables, scores, baseUrl);
+                var sel = document.getElementById('step4-table-select');
+                if (sel) sel.value = tables[0];
+                var badge = document.getElementById('step4-quality-badge');
+                if (badge) badge.style.display = 'none';
+              } else {
+                return fetchSyntheticTables(baseUrl).then(function (data) {
+                  refreshTableDropdown(data.tables, data.scores, baseUrl);
+                  return data;
+                });
+              }
+            })
+            .then(function (data) {
+              if (data && data.tables && data.tables.length) {
                 refreshTableDropdown(data.tables, data.scores, baseUrl);
-                return data;
-              });
-            }
-          })
-          .then(function (data) {
-            if (data && data.tables && data.tables.length) {
-              refreshTableDropdown(data.tables, data.scores, baseUrl);
-              var sel = document.getElementById('step4-table-select');
-              if (sel) sel.value = data.tables[0];
-            }
-          })
-          .catch(function (err) {
-            var errText = 'Anonymization failed: ' + (err.message || err);
-            setStep4Error(errText);
-            if (onToast) onToast(errText, 'error');
-            try { console.error('Step4 anonymize:', err); } catch (e) {}
-          })
-          .finally(function () {
-            anonymizeBtn.disabled = false;
-            anonymizeBtn.innerHTML = btnDefaultHTML;
-          });
+                var sel = document.getElementById('step4-table-select');
+                if (sel) sel.value = data.tables[0];
+              }
+            })
+            .catch(function (err) {
+              var errText = 'Anonymization failed: ' + (err.message || err);
+              setStep4Error(errText);
+              if (onToast) onToast(errText, 'error');
+              try { console.error('Step4 anonymize:', err); } catch (e) {}
+            })
+            .finally(function () {
+              anonymizeBtn.disabled = false;
+              anonymizeBtn.innerHTML = btnDefaultHTML;
+            });
 
         } catch (err) {
           var errText = err && err.message ? err.message : String(err);
@@ -500,6 +533,7 @@
         renderInlinePreview(t, baseUrl, onToast);
       });
     }
+
     if (compareBtn) {
       compareBtn.addEventListener('click', function () {
         var t = getSelectedTable();
@@ -510,6 +544,7 @@
         renderInlineCompare(t, baseUrl, onToast);
       });
     }
+
     if (downloadBtn) {
       downloadBtn.addEventListener('click', function () {
         var t = getSelectedTable();
@@ -520,6 +555,54 @@
         renderInlineDownload(t, baseUrl, onToast);
       });
     }
+
+    // ── DELETE DATA button ───────────────────────────────────────────────────
+    var deleteBtn = document.getElementById('btn-step4-delete');
+
+    if (deleteBtn) {
+      var deleteBtnDefaultHTML = deleteBtn.innerHTML;
+
+      deleteBtn.addEventListener('click', function () {
+        if (!window.confirm('Delete ALL uploaded files, results and metadata from the server?\n\nThis cannot be undone.')) {
+          return;
+        }
+
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = 'Deleting…';
+
+        deleteAllData(baseUrl)
+          .then(function (result) {
+            var count = (result.deleted_files || []).length;
+            var errCount = (result.errors || []).length;
+
+            refreshTableDropdown([], {}, baseUrl);
+
+            var area = document.getElementById('step4-content-area');
+            if (area) area.innerHTML = '<p class="empty-state">All data deleted. Upload new files in Step 1 to start again.</p>';
+
+            refreshStep4SourceDropdown();
+            document.dispatchEvent(new Event('step1:data-change'));
+
+            var msg = 'Deleted ' + count + ' file(s) from the server.';
+            if (errCount) msg += ' (' + errCount + ' error(s) — check console.)';
+            if (onToast) onToast(msg, errCount ? 'default' : 'success');
+
+            if (errCount) {
+              try { console.warn('Delete errors:', result.errors); } catch (e) {}
+            }
+          })
+          .catch(function (err) {
+            var errText = 'Delete failed: ' + (err.message || String(err));
+            if (onToast) onToast(errText, 'error');
+            try { console.error('Step4 delete-all:', err); } catch (e) {}
+          })
+          .finally(function () {
+            deleteBtn.disabled = false;
+            deleteBtn.innerHTML = deleteBtnDefaultHTML;
+          });
+      });
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     /** Initial load */
     fetchSyntheticTables(baseUrl)
@@ -533,4 +616,5 @@
 
   /** Expose so main app can refresh source dropdown when entering Step 4 */
   window.Step4 = { init: initStep4, refreshSourceDropdown: refreshStep4SourceDropdown };
+
 })(window.Step1);
