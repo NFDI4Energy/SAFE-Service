@@ -18,6 +18,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from pathlib import Path
+
+_RESULTS_DIR  = Path(__file__).parent.parent / "results"
+_RAW_DIR      = Path(__file__).parent.parent / "results" / "uploaded_data"
+_METADATA_DIR = Path(__file__).parent.parent / "results" / "meta_data"
+
 
 try:
     from src.generate_metada import generate_metadata, save_user_metadata_config
@@ -28,6 +34,7 @@ except ImportError:
 
 app = FastAPI(title="AnonymizationUI API")
 
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,6 +42,42 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.delete("/api/delete-all")
+def delete_all_data():
+    """
+    Wipes every file in results/, raw_data/ and metadata/.
+    Directories themselves are preserved so the service keeps running.
+    Returns a summary of deleted paths and any errors encountered.
+    """
+    target_dirs = [_RESULTS_DIR, _RAW_DIR, _METADATA_DIR]
+    deleted: list[str] = []
+    errors:  list[str] = []
+ 
+    for directory in target_dirs:
+        if not directory.exists():
+            continue  # directory not created yet — nothing to delete
+ 
+        for item in directory.iterdir():
+            try:
+                if item.is_file() or item.is_symlink():
+                    item.unlink()
+                    deleted.append(str(item.relative_to(directory.parent)))
+                elif item.is_dir():
+                    shutil.rmtree(item)
+                    deleted.append(str(item.relative_to(directory.parent)) + "/")
+            except Exception as exc:
+                errors.append(f"{item}: {exc}")
+ 
+    return JSONResponse(
+        status_code=200,
+        content={
+            "deleted_files": deleted,
+            "errors": errors,
+            "message": f"Deleted {len(deleted)} item(s)."
+        }
+    )
 
 
 @app.on_event("startup")
