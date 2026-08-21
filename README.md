@@ -1,4 +1,4 @@
-# Data Anonymization Service 
+# SAFE Service: Synthetic Anonymization Framework for Energy Data (SAFE)-based service
 
 [SDV](https://docs.sdv.dev/sdv) based tabular data anonymization tool with a 4-step workflow:
 
